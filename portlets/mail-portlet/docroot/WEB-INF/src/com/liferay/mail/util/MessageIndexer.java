@@ -16,16 +16,14 @@ package com.liferay.mail.util;
 
 import com.liferay.mail.model.Message;
 import com.liferay.mail.service.MessageLocalServiceUtil;
-import com.liferay.mail.service.persistence.MessageActionableDynamicQuery;
 import com.liferay.portal.kernel.dao.orm.ActionableDynamicQuery;
+import com.liferay.portal.kernel.dao.orm.IndexableActionableDynamicQuery;
 import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
 import com.liferay.portal.kernel.search.BaseIndexer;
 import com.liferay.portal.kernel.search.Document;
-import com.liferay.portal.kernel.search.DocumentImpl;
 import com.liferay.portal.kernel.search.Field;
-import com.liferay.portal.kernel.search.SearchContext;
 import com.liferay.portal.kernel.search.SearchEngineUtil;
 import com.liferay.portal.kernel.search.Summary;
 import com.liferay.portal.kernel.util.GetterUtil;
@@ -52,17 +50,7 @@ public class MessageIndexer extends BaseIndexer<Message> {
 
 	@Override
 	protected void doDelete(Message message) throws Exception {
-		SearchContext searchContext = new SearchContext();
-
-		searchContext.setSearchEngineId(getSearchEngineId());
-
-		Document document = new DocumentImpl();
-
-		document.addUID(CLASS_NAME, message.getMessageId());
-
-		SearchEngineUtil.deleteDocument(
-			getSearchEngineId(), message.getCompanyId(),
-			document.get(Field.UID), isCommitImmediately());
+		deleteDocument(message.getCompanyId(), message.getMessageId());
 	}
 
 	@Override
@@ -116,33 +104,36 @@ public class MessageIndexer extends BaseIndexer<Message> {
 	}
 
 	protected void reindexMessages(long companyId) throws PortalException {
-		ActionableDynamicQuery actionableDynamicQuery =
-			new MessageActionableDynamicQuery() {
+		final IndexableActionableDynamicQuery indexableActionableDynamicQuery =
+			MessageLocalServiceUtil.getIndexableActionableDynamicQuery();
 
-			@Override
-			protected void performAction(Object object) {
-				Message message = (Message)object;
+		indexableActionableDynamicQuery.setCompanyId(companyId);
+		indexableActionableDynamicQuery.setPerformActionMethod(
+			new ActionableDynamicQuery.PerformActionMethod<Message>() {
 
-				try {
-					Document document = getDocument(message);
+				@Override
+				public void performAction(Message message)
+					throws PortalException {
 
-					addDocument(document);
-				}
-				catch (PortalException pe) {
-					if (_log.isWarnEnabled()) {
-						_log.warn(
-							"Unable to index message " + message.getMessageId(),
-							pe);
+					try {
+						Document document = getDocument(message);
+
+						indexableActionableDynamicQuery.addDocuments(document);
+					}
+					catch (PortalException pe) {
+						if (_log.isWarnEnabled()) {
+							_log.warn(
+								"Unable to index message " +
+									message.getMessageId(),
+								pe);
+						}
 					}
 				}
-			}
 
-		};
+			});
+		indexableActionableDynamicQuery.setSearchEngineId(getSearchEngineId());
 
-		actionableDynamicQuery.setCompanyId(companyId);
-		actionableDynamicQuery.setSearchEngineId(getSearchEngineId());
-
-		actionableDynamicQuery.performActions();
+		indexableActionableDynamicQuery.performActions();
 	}
 
 	private static final Log _log = LogFactoryUtil.getLog(MessageIndexer.class);

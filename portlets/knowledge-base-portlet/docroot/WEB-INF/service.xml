@@ -115,6 +115,11 @@
 			<finder-column name="parentResourcePrimKey" arrayable-operator="OR" />
 			<finder-column name="status" />
 		</finder>
+		<finder name="R_G_V" return-type="KBArticle" unique="true">
+			<finder-column name="resourcePrimKey" />
+			<finder-column name="groupId" />
+			<finder-column name="version" />
+		</finder>
 		<finder name="R_G_L" return-type="Collection">
 			<finder-column name="resourcePrimKey" arrayable-operator="OR" />
 			<finder-column name="groupId" />
@@ -349,9 +354,7 @@
 		<reference package-path="com.liferay.portlet.social" entity="SocialActivity" />
 	</entity>
 	<exceptions>
-		<exception>DuplicateKBArticleUrlTitle</exception>
 		<exception>DuplicateKBFolderName</exception>
-		<exception>InvalidKBArticleUrlTitle</exception>
 		<exception>InvalidKBFolderName</exception>
 		<exception>KBArticleContent</exception>
 		<exception>KBArticleImport</exception>
@@ -359,6 +362,7 @@
 		<exception>KBArticlePriority</exception>
 		<exception>KBArticleSourceURL</exception>
 		<exception>KBArticleTitle</exception>
+		<exception>KBArticleUrlTitle</exception>
 		<exception>KBCommentContent</exception>
 		<exception>KBTemplateContent</exception>
 		<exception>KBTemplateTitle</exception>

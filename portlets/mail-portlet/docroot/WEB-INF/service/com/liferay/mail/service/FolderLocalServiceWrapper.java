@@ -201,16 +201,6 @@ public class FolderLocalServiceWrapper implements FolderLocalService,
 		return _folderLocalService.getActionableDynamicQuery();
 	}
 
-	/**
-	* Returns the Spring bean ID for this bean.
-	*
-	* @return the Spring bean ID for this bean
-	*/
-	@Override
-	public java.lang.String getBeanIdentifier() {
-		return _folderLocalService.getBeanIdentifier();
-	}
-
 	@Override
 	public com.liferay.mail.model.Folder getFolder(long accountId,
 		java.lang.String fullName)
@@ -265,8 +255,23 @@ public class FolderLocalServiceWrapper implements FolderLocalService,
 	}
 
 	@Override
+	public com.liferay.portal.kernel.dao.orm.IndexableActionableDynamicQuery getIndexableActionableDynamicQuery() {
+		return _folderLocalService.getIndexableActionableDynamicQuery();
+	}
+
+	@Override
 	public int getLocalPageCount(long folderId, int messagesPerPage) {
 		return _folderLocalService.getLocalPageCount(folderId, messagesPerPage);
+	}
+
+	/**
+	* Returns the OSGi service identifier.
+	*
+	* @return the OSGi service identifier
+	*/
+	@Override
+	public java.lang.String getOSGiServiceIdentifier() {
+		return _folderLocalService.getOSGiServiceIdentifier();
 	}
 
 	@Override
@@ -293,16 +298,6 @@ public class FolderLocalServiceWrapper implements FolderLocalService,
 		java.lang.String[] parameterTypes, java.lang.Object[] arguments)
 		throws java.lang.Throwable {
 		return _folderLocalService.invokeMethod(name, parameterTypes, arguments);
-	}
-
-	/**
-	* Sets the Spring bean ID for this bean.
-	*
-	* @param beanIdentifier the Spring bean ID for this bean
-	*/
-	@Override
-	public void setBeanIdentifier(java.lang.String beanIdentifier) {
-		_folderLocalService.setBeanIdentifier(beanIdentifier);
 	}
 
 	/**

@@ -223,14 +223,9 @@ public class OAuthTokenLocalServiceWrapper implements OAuthTokenLocalService,
 		return _oAuthTokenLocalService.getActionableDynamicQuery();
 	}
 
-	/**
-	* Returns the Spring bean ID for this bean.
-	*
-	* @return the Spring bean ID for this bean
-	*/
 	@Override
-	public java.lang.String getBeanIdentifier() {
-		return _oAuthTokenLocalService.getBeanIdentifier();
+	public com.liferay.portal.kernel.dao.orm.IndexableActionableDynamicQuery getIndexableActionableDynamicQuery() {
+		return _oAuthTokenLocalService.getIndexableActionableDynamicQuery();
 	}
 
 	/**
@@ -289,6 +284,16 @@ public class OAuthTokenLocalServiceWrapper implements OAuthTokenLocalService,
 		return _oAuthTokenLocalService.getOAuthTokensCount();
 	}
 
+	/**
+	* Returns the OSGi service identifier.
+	*
+	* @return the OSGi service identifier
+	*/
+	@Override
+	public java.lang.String getOSGiServiceIdentifier() {
+		return _oAuthTokenLocalService.getOSGiServiceIdentifier();
+	}
+
 	@Override
 	public com.liferay.portal.model.PersistedModel getPersistedModel(
 		java.io.Serializable primaryKeyObj)
@@ -302,16 +307,6 @@ public class OAuthTokenLocalServiceWrapper implements OAuthTokenLocalService,
 		throws java.lang.Throwable {
 		return _oAuthTokenLocalService.invokeMethod(name, parameterTypes,
 			arguments);
-	}
-
-	/**
-	* Sets the Spring bean ID for this bean.
-	*
-	* @param beanIdentifier the Spring bean ID for this bean
-	*/
-	@Override
-	public void setBeanIdentifier(java.lang.String beanIdentifier) {
-		_oAuthTokenLocalService.setBeanIdentifier(beanIdentifier);
 	}
 
 	/**

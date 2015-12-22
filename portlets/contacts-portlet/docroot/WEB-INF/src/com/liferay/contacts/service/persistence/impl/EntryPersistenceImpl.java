@@ -22,7 +22,10 @@ import com.liferay.contacts.model.impl.EntryImpl;
 import com.liferay.contacts.model.impl.EntryModelImpl;
 import com.liferay.contacts.service.persistence.EntryPersistence;
 
+import com.liferay.portal.kernel.bean.BeanReference;
+import com.liferay.portal.kernel.dao.orm.EntityCache;
 import com.liferay.portal.kernel.dao.orm.EntityCacheUtil;
+import com.liferay.portal.kernel.dao.orm.FinderCache;
 import com.liferay.portal.kernel.dao.orm.FinderCacheUtil;
 import com.liferay.portal.kernel.dao.orm.FinderPath;
 import com.liferay.portal.kernel.dao.orm.Query;
@@ -39,6 +42,7 @@ import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.model.CacheModel;
 import com.liferay.portal.service.ServiceContext;
 import com.liferay.portal.service.ServiceContextThreadLocal;
+import com.liferay.portal.service.persistence.CompanyProvider;
 import com.liferay.portal.service.persistence.impl.BasePersistenceImpl;
 
 import java.io.Serializable;
@@ -151,6 +155,26 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 	@Override
 	public List<Entry> findByUserId(long userId, int start, int end,
 		OrderByComparator<Entry> orderByComparator) {
+		return findByUserId(userId, start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the entries where userId = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link EntryModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param userId the user ID
+	 * @param start the lower bound of the range of entries
+	 * @param end the upper bound of the range of entries (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching entries
+	 */
+	@Override
+	public List<Entry> findByUserId(long userId, int start, int end,
+		OrderByComparator<Entry> orderByComparator, boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -166,15 +190,19 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 			finderArgs = new Object[] { userId, start, end, orderByComparator };
 		}
 
-		List<Entry> list = (List<Entry>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<Entry> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (Entry entry : list) {
-				if ((userId != entry.getUserId())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<Entry>)finderCache.getResult(finderPath, finderArgs,
+					this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (Entry entry : list) {
+					if ((userId != entry.getUserId())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -231,10 +259,10 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -518,8 +546,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 
 		Object[] finderArgs = new Object[] { userId };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(2);
@@ -543,10 +570,10 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -623,7 +650,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 	 *
 	 * @param userId the user ID
 	 * @param emailAddress the email address
-	 * @param retrieveFromCache whether to use the finder cache
+	 * @param retrieveFromCache whether to retrieve from the finder cache
 	 * @return the matching entry, or <code>null</code> if a matching entry could not be found
 	 */
 	@Override
@@ -634,7 +661,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 		Object result = null;
 
 		if (retrieveFromCache) {
-			result = FinderCacheUtil.getResult(FINDER_PATH_FETCH_BY_U_EA,
+			result = finderCache.getResult(FINDER_PATH_FETCH_BY_U_EA,
 					finderArgs, this);
 		}
 
@@ -688,7 +715,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 				List<Entry> list = q.list();
 
 				if (list.isEmpty()) {
-					FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_U_EA,
+					finderCache.putResult(FINDER_PATH_FETCH_BY_U_EA,
 						finderArgs, list);
 				}
 				else {
@@ -708,14 +735,13 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 					if ((entry.getUserId() != userId) ||
 							(entry.getEmailAddress() == null) ||
 							!entry.getEmailAddress().equals(emailAddress)) {
-						FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_U_EA,
+						finderCache.putResult(FINDER_PATH_FETCH_BY_U_EA,
 							finderArgs, entry);
 					}
 				}
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_FETCH_BY_U_EA,
-					finderArgs);
+				finderCache.removeResult(FINDER_PATH_FETCH_BY_U_EA, finderArgs);
 
 				throw processException(e);
 			}
@@ -760,8 +786,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 
 		Object[] finderArgs = new Object[] { userId, emailAddress };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -803,10 +828,10 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -834,10 +859,10 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 	 */
 	@Override
 	public void cacheResult(Entry entry) {
-		EntityCacheUtil.putResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+		entityCache.putResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 			EntryImpl.class, entry.getPrimaryKey(), entry);
 
-		FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_U_EA,
+		finderCache.putResult(FINDER_PATH_FETCH_BY_U_EA,
 			new Object[] { entry.getUserId(), entry.getEmailAddress() }, entry);
 
 		entry.resetOriginalValues();
@@ -851,7 +876,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 	@Override
 	public void cacheResult(List<Entry> entries) {
 		for (Entry entry : entries) {
-			if (EntityCacheUtil.getResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+			if (entityCache.getResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 						EntryImpl.class, entry.getPrimaryKey()) == null) {
 				cacheResult(entry);
 			}
@@ -865,43 +890,43 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 	 * Clears the cache for all entries.
 	 *
 	 * <p>
-	 * The {@link com.liferay.portal.kernel.dao.orm.EntityCache} and {@link com.liferay.portal.kernel.dao.orm.FinderCache} are both cleared by this method.
+	 * The {@link EntityCache} and {@link FinderCache} are both cleared by this method.
 	 * </p>
 	 */
 	@Override
 	public void clearCache() {
-		EntityCacheUtil.clearCache(EntryImpl.class);
+		entityCache.clearCache(EntryImpl.class);
 
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_ENTITY);
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_ENTITY);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 	}
 
 	/**
 	 * Clears the cache for the entry.
 	 *
 	 * <p>
-	 * The {@link com.liferay.portal.kernel.dao.orm.EntityCache} and {@link com.liferay.portal.kernel.dao.orm.FinderCache} are both cleared by this method.
+	 * The {@link EntityCache} and {@link FinderCache} are both cleared by this method.
 	 * </p>
 	 */
 	@Override
 	public void clearCache(Entry entry) {
-		EntityCacheUtil.removeResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+		entityCache.removeResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 			EntryImpl.class, entry.getPrimaryKey());
 
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 
 		clearUniqueFindersCache((EntryModelImpl)entry);
 	}
 
 	@Override
 	public void clearCache(List<Entry> entries) {
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 
 		for (Entry entry : entries) {
-			EntityCacheUtil.removeResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+			entityCache.removeResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 				EntryImpl.class, entry.getPrimaryKey());
 
 			clearUniqueFindersCache((EntryModelImpl)entry);
@@ -915,9 +940,9 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 					entryModelImpl.getUserId(), entryModelImpl.getEmailAddress()
 				};
 
-			FinderCacheUtil.putResult(FINDER_PATH_COUNT_BY_U_EA, args,
+			finderCache.putResult(FINDER_PATH_COUNT_BY_U_EA, args,
 				Long.valueOf(1));
-			FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_U_EA, args,
+			finderCache.putResult(FINDER_PATH_FETCH_BY_U_EA, args,
 				entryModelImpl);
 		}
 		else {
@@ -928,9 +953,9 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 						entryModelImpl.getEmailAddress()
 					};
 
-				FinderCacheUtil.putResult(FINDER_PATH_COUNT_BY_U_EA, args,
+				finderCache.putResult(FINDER_PATH_COUNT_BY_U_EA, args,
 					Long.valueOf(1));
-				FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_U_EA, args,
+				finderCache.putResult(FINDER_PATH_FETCH_BY_U_EA, args,
 					entryModelImpl);
 			}
 		}
@@ -941,8 +966,8 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 				entryModelImpl.getUserId(), entryModelImpl.getEmailAddress()
 			};
 
-		FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_U_EA, args);
-		FinderCacheUtil.removeResult(FINDER_PATH_FETCH_BY_U_EA, args);
+		finderCache.removeResult(FINDER_PATH_COUNT_BY_U_EA, args);
+		finderCache.removeResult(FINDER_PATH_FETCH_BY_U_EA, args);
 
 		if ((entryModelImpl.getColumnBitmask() &
 				FINDER_PATH_FETCH_BY_U_EA.getColumnBitmask()) != 0) {
@@ -951,8 +976,8 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 					entryModelImpl.getOriginalEmailAddress()
 				};
 
-			FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_U_EA, args);
-			FinderCacheUtil.removeResult(FINDER_PATH_FETCH_BY_U_EA, args);
+			finderCache.removeResult(FINDER_PATH_COUNT_BY_U_EA, args);
+			finderCache.removeResult(FINDER_PATH_FETCH_BY_U_EA, args);
 		}
 	}
 
@@ -1105,10 +1130,10 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 			closeSession(session);
 		}
 
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
 
 		if (isNew || !EntryModelImpl.COLUMN_BITMASK_ENABLED) {
-			FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+			finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 		}
 
 		else {
@@ -1116,19 +1141,19 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 					FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_USERID.getColumnBitmask()) != 0) {
 				Object[] args = new Object[] { entryModelImpl.getOriginalUserId() };
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_USERID, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_USERID,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_USERID, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_USERID,
 					args);
 
 				args = new Object[] { entryModelImpl.getUserId() };
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_USERID, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_USERID,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_USERID, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_USERID,
 					args);
 			}
 		}
 
-		EntityCacheUtil.putResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+		entityCache.putResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 			EntryImpl.class, entry.getPrimaryKey(), entry, false);
 
 		clearUniqueFindersCache(entryModelImpl);
@@ -1207,7 +1232,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 	 */
 	@Override
 	public Entry fetchByPrimaryKey(Serializable primaryKey) {
-		Entry entry = (Entry)EntityCacheUtil.getResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+		Entry entry = (Entry)entityCache.getResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 				EntryImpl.class, primaryKey);
 
 		if (entry == _nullEntry) {
@@ -1226,12 +1251,12 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 					cacheResult(entry);
 				}
 				else {
-					EntityCacheUtil.putResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+					entityCache.putResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 						EntryImpl.class, primaryKey, _nullEntry);
 				}
 			}
 			catch (Exception e) {
-				EntityCacheUtil.removeResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+				entityCache.removeResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 					EntryImpl.class, primaryKey);
 
 				throw processException(e);
@@ -1281,7 +1306,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 		Set<Serializable> uncachedPrimaryKeys = null;
 
 		for (Serializable primaryKey : primaryKeys) {
-			Entry entry = (Entry)EntityCacheUtil.getResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+			Entry entry = (Entry)entityCache.getResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 					EntryImpl.class, primaryKey);
 
 			if (entry == null) {
@@ -1333,7 +1358,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 			}
 
 			for (Serializable primaryKey : uncachedPrimaryKeys) {
-				EntityCacheUtil.putResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
+				entityCache.putResult(EntryModelImpl.ENTITY_CACHE_ENABLED,
 					EntryImpl.class, primaryKey, _nullEntry);
 			}
 		}
@@ -1388,6 +1413,25 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 	@Override
 	public List<Entry> findAll(int start, int end,
 		OrderByComparator<Entry> orderByComparator) {
+		return findAll(start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the entries.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link EntryModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param start the lower bound of the range of entries
+	 * @param end the upper bound of the range of entries (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of entries
+	 */
+	@Override
+	public List<Entry> findAll(int start, int end,
+		OrderByComparator<Entry> orderByComparator, boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -1403,8 +1447,12 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 			finderArgs = new Object[] { start, end, orderByComparator };
 		}
 
-		List<Entry> list = (List<Entry>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<Entry> list = null;
+
+		if (retrieveFromCache) {
+			list = (List<Entry>)finderCache.getResult(finderPath, finderArgs,
+					this);
+		}
 
 		if (list == null) {
 			StringBundler query = null;
@@ -1451,10 +1499,10 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -1484,7 +1532,7 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 	 */
 	@Override
 	public int countAll() {
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_COUNT_ALL,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_COUNT_ALL,
 				FINDER_ARGS_EMPTY, this);
 
 		if (count == null) {
@@ -1497,11 +1545,11 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_COUNT_ALL,
-					FINDER_ARGS_EMPTY, count);
+				finderCache.putResult(FINDER_PATH_COUNT_ALL, FINDER_ARGS_EMPTY,
+					count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_ALL,
+				finderCache.removeResult(FINDER_PATH_COUNT_ALL,
 					FINDER_ARGS_EMPTY);
 
 				throw processException(e);
@@ -1526,12 +1574,16 @@ public class EntryPersistenceImpl extends BasePersistenceImpl<Entry>
 	}
 
 	public void destroy() {
-		EntityCacheUtil.removeCache(EntryImpl.class.getName());
-		FinderCacheUtil.removeCache(FINDER_CLASS_NAME_ENTITY);
-		FinderCacheUtil.removeCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
-		FinderCacheUtil.removeCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+		entityCache.removeCache(EntryImpl.class.getName());
+		finderCache.removeCache(FINDER_CLASS_NAME_ENTITY);
+		finderCache.removeCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.removeCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 	}
 
+	@BeanReference(type = CompanyProvider.class)
+	protected CompanyProvider companyProvider;
+	protected EntityCache entityCache = EntityCacheUtil.getEntityCache();
+	protected FinderCache finderCache = FinderCacheUtil.getFinderCache();
 	private static final String _SQL_SELECT_ENTRY = "SELECT entry FROM Entry entry";
 	private static final String _SQL_SELECT_ENTRY_WHERE_PKS_IN = "SELECT entry FROM Entry entry WHERE entryId IN (";
 	private static final String _SQL_SELECT_ENTRY_WHERE = "SELECT entry FROM Entry entry WHERE ";

@@ -26,7 +26,6 @@ import com.liferay.portal.kernel.util.StringPool;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
 import com.liferay.portal.model.Group;
 import com.liferay.portal.service.GroupLocalServiceUtil;
-import com.liferay.portlet.documentlibrary.NoSuchFileException;
 import com.liferay.portlet.documentlibrary.model.DLFileEntry;
 import com.liferay.portlet.documentlibrary.model.DLFolder;
 import com.liferay.portlet.documentlibrary.service.DLFileEntryLocalServiceUtil;
@@ -146,10 +145,10 @@ public class VerifyUtil {
 			});
 		dlFolderActionableDynamicQuery.setGroupId(groupId);
 		dlFolderActionableDynamicQuery.setPerformActionMethod(
-			new ActionableDynamicQuery.PerformActionMethod() {
+			new ActionableDynamicQuery.PerformActionMethod<DLFolder>() {
 
 				@Override
-				public void performAction(Object object)
+				public void performAction(DLFolder dlFolder)
 					throws PortalException {
 
 					_dlFoldersAndFileEntriesCount++;
@@ -159,36 +158,40 @@ public class VerifyUtil {
 						_dlFoldersAndFileEntriesTotalCount,
 						"DL folders and DL file entries");
 
-					DLFolder dlFolder = (DLFolder)object;
-
 					if (!SyncUtil.isSupportedFolder(dlFolder)) {
 						return;
 					}
 
-					SyncDLObject syncDLObject =
-						SyncDLObjectLocalServiceUtil.fetchSyncDLObject(
-							SyncConstants.TYPE_FOLDER, dlFolder.getFolderId());
+					try {
+						SyncDLObject syncDLObject =
+							SyncDLObjectLocalServiceUtil.fetchSyncDLObject(
+								SyncConstants.TYPE_FOLDER,
+								dlFolder.getFolderId());
 
-					Date modifiedDate = dlFolder.getModifiedDate();
+						Date modifiedDate = dlFolder.getModifiedDate();
 
-					if ((syncDLObject != null) &&
-						(syncDLObject.getModifiedTime() >=
-							modifiedDate.getTime())) {
+						if ((syncDLObject != null) &&
+							(syncDLObject.getModifiedTime() >=
+								modifiedDate.getTime())) {
 
-						return;
+							return;
+						}
+
+						if (dlFolder.getStatus() ==
+								WorkflowConstants.STATUS_APPROVED) {
+
+							addSyncDLObject(
+								SyncUtil.toSyncDLObject(
+									dlFolder, SyncConstants.EVENT_ADD));
+						}
+						else {
+							addSyncDLObject(
+								SyncUtil.toSyncDLObject(
+									dlFolder, SyncConstants.EVENT_TRASH));
+						}
 					}
-
-					if (dlFolder.getStatus() ==
-							WorkflowConstants.STATUS_APPROVED) {
-
-						addSyncDLObject(
-							SyncUtil.toSyncDLObject(
-								dlFolder, SyncConstants.EVENT_ADD));
-					}
-					else {
-						addSyncDLObject(
-							SyncUtil.toSyncDLObject(
-								dlFolder, SyncConstants.EVENT_TRASH));
+					catch (Exception e) {
+						_log.error(e, e);
 					}
 				}
 
@@ -199,10 +202,10 @@ public class VerifyUtil {
 
 		dlFileEntryActionableDynamicQuery.setGroupId(groupId);
 		dlFileEntryActionableDynamicQuery.setPerformActionMethod(
-			new ActionableDynamicQuery.PerformActionMethod() {
+			new ActionableDynamicQuery.PerformActionMethod<DLFileEntry>() {
 
 				@Override
-				public void performAction(Object object)
+				public void performAction(DLFileEntry dlFileEntry)
 					throws PortalException {
 
 					_dlFoldersAndFileEntriesCount++;
@@ -211,8 +214,6 @@ public class VerifyUtil {
 						_dlFoldersAndFileEntriesCount,
 						_dlFoldersAndFileEntriesTotalCount,
 						"DL folders and DL file entries");
-
-					DLFileEntry dlFileEntry = (DLFileEntry)object;
 
 					if ((dlFileEntry.getStatus() !=
 							WorkflowConstants.STATUS_APPROVED) &&
@@ -261,12 +262,8 @@ public class VerifyUtil {
 
 						addSyncDLObject(fileEntrySyncDLObject);
 					}
-					catch (NoSuchFileException nsfe) {
-						if (_log.isWarnEnabled()) {
-							_log.warn(
-								"File missing for file entry " +
-									dlFileEntry.getFileEntryId());
-						}
+					catch (Exception e) {
+						_log.error(e, e);
 					}
 				}
 
@@ -310,10 +307,10 @@ public class VerifyUtil {
 
 			});
 		syncDLObjectActionableDynamicQuery.setPerformActionMethod(
-			new ActionableDynamicQuery.PerformActionMethod() {
+			new ActionableDynamicQuery.PerformActionMethod<SyncDLObject>() {
 
 				@Override
-				public void performAction(Object object)
+				public void performAction(SyncDLObject syncDLObject)
 					throws PortalException {
 
 					_syncDLObjectsCount++;
@@ -321,8 +318,6 @@ public class VerifyUtil {
 					logCount(
 						_syncDLObjectsCount, _syncDLObjectsTotalCount,
 						"Sync DL objects");
-
-					SyncDLObject syncDLObject = (SyncDLObject)object;
 
 					String type = syncDLObject.getType();
 

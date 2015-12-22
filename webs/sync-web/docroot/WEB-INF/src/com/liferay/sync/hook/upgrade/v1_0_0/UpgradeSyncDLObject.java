@@ -27,12 +27,6 @@ public class UpgradeSyncDLObject extends UpgradeProcess {
 
 	@Override
 	protected void doUpgrade() throws Exception {
-		try {
-			runSQL("drop index IX_69ADEDD1 on SyncDLObject");
-		}
-		catch (Exception e) {
-		}
-
 		SyncDLObjectLocalServiceUtil.deleteSyncDLObjects(
 			DLFileEntryConstants.PRIVATE_WORKING_COPY_VERSION,
 			SyncConstants.TYPE_FILE);

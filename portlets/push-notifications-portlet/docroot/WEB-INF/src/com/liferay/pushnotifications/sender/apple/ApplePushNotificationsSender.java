@@ -226,6 +226,8 @@ public class ApplePushNotificationsSender implements PushNotificationsSender {
 
 			appleServiceBuilder.withCert(is, certificatePassword);
 
+			appleServiceBuilder.withDelegate(new AppleDelegate());
+
 			if (isSandbox()) {
 				appleServiceBuilder.withSandboxDestination();
 			}

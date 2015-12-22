@@ -22,7 +22,10 @@ import com.liferay.knowledgebase.model.impl.KBArticleImpl;
 import com.liferay.knowledgebase.model.impl.KBArticleModelImpl;
 import com.liferay.knowledgebase.service.persistence.KBArticlePersistence;
 
+import com.liferay.portal.kernel.bean.BeanReference;
+import com.liferay.portal.kernel.dao.orm.EntityCache;
 import com.liferay.portal.kernel.dao.orm.EntityCacheUtil;
+import com.liferay.portal.kernel.dao.orm.FinderCache;
 import com.liferay.portal.kernel.dao.orm.FinderCacheUtil;
 import com.liferay.portal.kernel.dao.orm.FinderPath;
 import com.liferay.portal.kernel.dao.orm.Query;
@@ -45,10 +48,12 @@ import com.liferay.portal.model.CacheModel;
 import com.liferay.portal.security.permission.InlineSQLHelperUtil;
 import com.liferay.portal.service.ServiceContext;
 import com.liferay.portal.service.ServiceContextThreadLocal;
+import com.liferay.portal.service.persistence.CompanyProvider;
 import com.liferay.portal.service.persistence.impl.BasePersistenceImpl;
 
 import java.io.Serializable;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -156,6 +161,27 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByUuid(String uuid, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByUuid(uuid, start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where uuid = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param uuid the uuid
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByUuid(String uuid, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -171,15 +197,19 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 			finderArgs = new Object[] { uuid, start, end, orderByComparator };
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!Validator.equals(uuid, kbArticle.getUuid())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!Validator.equals(uuid, kbArticle.getUuid())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -250,10 +280,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -554,8 +584,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { uuid };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(2);
@@ -593,10 +622,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -675,7 +704,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	 *
 	 * @param uuid the uuid
 	 * @param groupId the group ID
-	 * @param retrieveFromCache whether to use the finder cache
+	 * @param retrieveFromCache whether to retrieve from the finder cache
 	 * @return the matching k b article, or <code>null</code> if a matching k b article could not be found
 	 */
 	@Override
@@ -686,7 +715,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		Object result = null;
 
 		if (retrieveFromCache) {
-			result = FinderCacheUtil.getResult(FINDER_PATH_FETCH_BY_UUID_G,
+			result = finderCache.getResult(FINDER_PATH_FETCH_BY_UUID_G,
 					finderArgs, this);
 		}
 
@@ -740,7 +769,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				List<KBArticle> list = q.list();
 
 				if (list.isEmpty()) {
-					FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_UUID_G,
+					finderCache.putResult(FINDER_PATH_FETCH_BY_UUID_G,
 						finderArgs, list);
 				}
 				else {
@@ -753,14 +782,13 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 					if ((kbArticle.getUuid() == null) ||
 							!kbArticle.getUuid().equals(uuid) ||
 							(kbArticle.getGroupId() != groupId)) {
-						FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_UUID_G,
+						finderCache.putResult(FINDER_PATH_FETCH_BY_UUID_G,
 							finderArgs, kbArticle);
 					}
 				}
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_FETCH_BY_UUID_G,
-					finderArgs);
+				finderCache.removeResult(FINDER_PATH_FETCH_BY_UUID_G, finderArgs);
 
 				throw processException(e);
 			}
@@ -805,8 +833,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { uuid, groupId };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -848,10 +875,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -938,6 +965,28 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByUuid_C(String uuid, long companyId, int start,
 		int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByUuid_C(uuid, companyId, start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where uuid = &#63; and companyId = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param uuid the uuid
+	 * @param companyId the company ID
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByUuid_C(String uuid, long companyId, int start,
+		int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -957,16 +1006,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!Validator.equals(uuid, kbArticle.getUuid()) ||
-						(companyId != kbArticle.getCompanyId())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!Validator.equals(uuid, kbArticle.getUuid()) ||
+							(companyId != kbArticle.getCompanyId())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -1041,10 +1094,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -1365,8 +1418,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { uuid, companyId };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -1408,10 +1460,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -1495,6 +1547,28 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByResourcePrimKey(long resourcePrimKey,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByResourcePrimKey(resourcePrimKey, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByResourcePrimKey(long resourcePrimKey,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -1514,15 +1588,19 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((resourcePrimKey != kbArticle.getResourcePrimKey())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((resourcePrimKey != kbArticle.getResourcePrimKey())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -1579,10 +1657,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -1872,8 +1950,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { resourcePrimKey };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(2);
@@ -1897,10 +1974,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -1984,6 +2061,29 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByR_G(long resourcePrimKey, long groupId,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_G(resourcePrimKey, groupId, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and groupId = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_G(long resourcePrimKey, long groupId,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -2003,16 +2103,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
-						(groupId != kbArticle.getGroupId())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
+							(groupId != kbArticle.getGroupId())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -2073,10 +2177,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -2707,8 +2811,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { resourcePrimKey, groupId };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -2736,10 +2839,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -2870,7 +2973,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	 *
 	 * @param resourcePrimKey the resource prim key
 	 * @param version the version
-	 * @param retrieveFromCache whether to use the finder cache
+	 * @param retrieveFromCache whether to retrieve from the finder cache
 	 * @return the matching k b article, or <code>null</code> if a matching k b article could not be found
 	 */
 	@Override
@@ -2881,7 +2984,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		Object result = null;
 
 		if (retrieveFromCache) {
-			result = FinderCacheUtil.getResult(FINDER_PATH_FETCH_BY_R_V,
+			result = finderCache.getResult(FINDER_PATH_FETCH_BY_R_V,
 					finderArgs, this);
 		}
 
@@ -2921,8 +3024,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				List<KBArticle> list = q.list();
 
 				if (list.isEmpty()) {
-					FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_R_V,
-						finderArgs, list);
+					finderCache.putResult(FINDER_PATH_FETCH_BY_R_V, finderArgs,
+						list);
 				}
 				else {
 					KBArticle kbArticle = list.get(0);
@@ -2933,14 +3036,13 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 					if ((kbArticle.getResourcePrimKey() != resourcePrimKey) ||
 							(kbArticle.getVersion() != version)) {
-						FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_R_V,
+						finderCache.putResult(FINDER_PATH_FETCH_BY_R_V,
 							finderArgs, kbArticle);
 					}
 				}
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_FETCH_BY_R_V,
-					finderArgs);
+				finderCache.removeResult(FINDER_PATH_FETCH_BY_R_V, finderArgs);
 
 				throw processException(e);
 			}
@@ -2985,8 +3087,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { resourcePrimKey, version };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -3014,10 +3115,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -3105,6 +3206,29 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByR_L(long resourcePrimKey, boolean latest,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_L(resourcePrimKey, latest, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and latest = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_L(long resourcePrimKey, boolean latest,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -3124,16 +3248,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -3194,10 +3322,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -3531,11 +3659,36 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByR_L(long[] resourcePrimKeies, boolean latest,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_L(resourcePrimKeies, latest, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and latest = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_L(long[] resourcePrimKeies, boolean latest,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		if (resourcePrimKeies.length == 1) {
@@ -3561,17 +3714,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_L,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!ArrayUtil.contains(resourcePrimKeies,
-							kbArticle.getResourcePrimKey()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_L,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!ArrayUtil.contains(resourcePrimKeies,
+								kbArticle.getResourcePrimKey()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -3637,11 +3794,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_L,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_L,
 					finderArgs);
 
 				throw processException(e);
@@ -3681,8 +3838,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { resourcePrimKey, latest };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -3710,10 +3866,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -3737,15 +3893,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				StringUtil.merge(resourcePrimKeies), latest
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_L,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_L,
 				finderArgs, this);
 
 		if (count == null) {
@@ -3787,11 +3945,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_L,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_L,
 					finderArgs);
 
 				throw processException(e);
@@ -3881,6 +4039,29 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByR_M(long resourcePrimKey, boolean main,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_M(resourcePrimKey, main, start, end, orderByComparator,
+			true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and main = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_M(long resourcePrimKey, boolean main,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -3900,16 +4081,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -3970,10 +4155,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -4307,11 +4492,36 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByR_M(long[] resourcePrimKeies, boolean main,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_M(resourcePrimKeies, main, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and main = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_M(long[] resourcePrimKeies, boolean main,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		if (resourcePrimKeies.length == 1) {
@@ -4335,17 +4545,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_M,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!ArrayUtil.contains(resourcePrimKeies,
-							kbArticle.getResourcePrimKey()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_M,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!ArrayUtil.contains(resourcePrimKeies,
+								kbArticle.getResourcePrimKey()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -4411,11 +4625,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_M,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_M,
 					finderArgs);
 
 				throw processException(e);
@@ -4455,8 +4669,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { resourcePrimKey, main };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -4484,10 +4697,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -4511,15 +4724,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				StringUtil.merge(resourcePrimKeies), main
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_M,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_M,
 				finderArgs, this);
 
 		if (count == null) {
@@ -4561,11 +4776,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_M,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_M,
 					finderArgs);
 
 				throw processException(e);
@@ -4655,6 +4870,29 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByR_S(long resourcePrimKey, int status,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_S(resourcePrimKey, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and status = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_S(long resourcePrimKey, int status,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -4674,16 +4912,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -4744,10 +4986,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -5081,11 +5323,36 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByR_S(long[] resourcePrimKeies, int status,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_S(resourcePrimKeies, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and status = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_S(long[] resourcePrimKeies, int status,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		if (resourcePrimKeies.length == 1) {
@@ -5111,17 +5378,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_S,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!ArrayUtil.contains(resourcePrimKeies,
-							kbArticle.getResourcePrimKey()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_S,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!ArrayUtil.contains(resourcePrimKeies,
+								kbArticle.getResourcePrimKey()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -5187,11 +5458,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_S,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_S,
 					finderArgs);
 
 				throw processException(e);
@@ -5231,8 +5502,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { resourcePrimKey, status };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -5260,10 +5530,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -5287,15 +5557,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				StringUtil.merge(resourcePrimKeies), status
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_S,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_S,
 				finderArgs, this);
 
 		if (count == null) {
@@ -5337,11 +5609,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_S,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_S,
 					finderArgs);
 
 				throw processException(e);
@@ -5427,6 +5699,28 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByG_L(long groupId, boolean latest, int start,
 		int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_L(groupId, latest, start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and latest = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_L(long groupId, boolean latest, int start,
+		int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -5446,16 +5740,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -5516,10 +5814,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -6147,8 +6445,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, latest };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -6176,10 +6473,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -6316,6 +6613,28 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByG_M(long groupId, boolean main, int start,
 		int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_M(groupId, main, start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and main = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_M(long groupId, boolean main, int start,
+		int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -6335,16 +6654,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -6405,10 +6728,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -7034,8 +7357,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, main };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -7063,10 +7385,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -7203,6 +7525,28 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByG_S(long groupId, int status, int start,
 		int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_S(groupId, status, start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and status = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_S(long groupId, int status, int start,
+		int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -7222,16 +7566,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -7292,10 +7640,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -7922,8 +8270,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, status };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -7951,10 +8298,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -8091,6 +8438,28 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByC_L(long companyId, boolean latest, int start,
 		int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByC_L(companyId, latest, start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where companyId = &#63; and latest = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param companyId the company ID
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByC_L(long companyId, boolean latest, int start,
+		int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -8110,16 +8479,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((companyId != kbArticle.getCompanyId()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((companyId != kbArticle.getCompanyId()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -8180,10 +8553,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -8490,8 +8863,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { companyId, latest };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -8519,10 +8891,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -8606,6 +8978,28 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByC_M(long companyId, boolean main, int start,
 		int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByC_M(companyId, main, start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where companyId = &#63; and main = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param companyId the company ID
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByC_M(long companyId, boolean main, int start,
+		int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -8625,16 +9019,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((companyId != kbArticle.getCompanyId()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((companyId != kbArticle.getCompanyId()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -8695,10 +9093,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -9004,8 +9402,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { companyId, main };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -9033,10 +9430,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -9120,6 +9517,28 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByC_S(long companyId, int status, int start,
 		int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByC_S(companyId, status, start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where companyId = &#63; and status = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param companyId the company ID
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByC_S(long companyId, int status, int start,
+		int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -9139,16 +9558,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((companyId != kbArticle.getCompanyId()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((companyId != kbArticle.getCompanyId()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -9209,10 +9632,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -9519,8 +9942,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { companyId, status };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -9548,10 +9970,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -9640,6 +10062,30 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByP_L(long parentResourcePrimKey,
 		boolean latest, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByP_L(parentResourcePrimKey, latest, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where parentResourcePrimKey = &#63; and latest = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByP_L(long parentResourcePrimKey,
+		boolean latest, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -9659,16 +10105,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -9729,10 +10179,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -10068,11 +10518,37 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByP_L(long[] parentResourcePrimKeies,
 		boolean latest, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByP_L(parentResourcePrimKeies, latest, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where parentResourcePrimKey = &#63; and latest = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByP_L(long[] parentResourcePrimKeies,
+		boolean latest, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		if (parentResourcePrimKeies.length == 1) {
@@ -10098,17 +10574,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_L,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!ArrayUtil.contains(parentResourcePrimKeies,
-							kbArticle.getParentResourcePrimKey()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_L,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!ArrayUtil.contains(parentResourcePrimKeies,
+								kbArticle.getParentResourcePrimKey()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -10174,11 +10654,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_L,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_L,
 					finderArgs);
 
 				throw processException(e);
@@ -10218,8 +10698,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { parentResourcePrimKey, latest };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -10247,10 +10726,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -10274,15 +10753,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				StringUtil.merge(parentResourcePrimKeies), latest
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_L,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_L,
 				finderArgs, this);
 
 		if (count == null) {
@@ -10324,11 +10805,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_L,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_L,
 					finderArgs);
 
 				throw processException(e);
@@ -10418,6 +10899,29 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByP_M(long parentResourcePrimKey, boolean main,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByP_M(parentResourcePrimKey, main, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where parentResourcePrimKey = &#63; and main = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByP_M(long parentResourcePrimKey, boolean main,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -10437,16 +10941,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -10507,10 +11015,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -10846,11 +11354,37 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByP_M(long[] parentResourcePrimKeies,
 		boolean main, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByP_M(parentResourcePrimKeies, main, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where parentResourcePrimKey = &#63; and main = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByP_M(long[] parentResourcePrimKeies,
+		boolean main, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		if (parentResourcePrimKeies.length == 1) {
@@ -10876,17 +11410,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_M,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!ArrayUtil.contains(parentResourcePrimKeies,
-							kbArticle.getParentResourcePrimKey()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_M,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!ArrayUtil.contains(parentResourcePrimKeies,
+								kbArticle.getParentResourcePrimKey()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -10952,11 +11490,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_M,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_M,
 					finderArgs);
 
 				throw processException(e);
@@ -10996,8 +11534,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { parentResourcePrimKey, main };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -11025,10 +11562,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -11052,15 +11589,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				StringUtil.merge(parentResourcePrimKeies), main
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_M,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_M,
 				finderArgs, this);
 
 		if (count == null) {
@@ -11102,11 +11641,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_M,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_M,
 					finderArgs);
 
 				throw processException(e);
@@ -11196,6 +11735,29 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findByP_S(long parentResourcePrimKey, int status,
 		int start, int end, OrderByComparator<KBArticle> orderByComparator) {
+		return findByP_S(parentResourcePrimKey, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where parentResourcePrimKey = &#63; and status = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByP_S(long parentResourcePrimKey, int status,
+		int start, int end, OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -11215,16 +11777,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -11285,10 +11851,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -11623,11 +12189,37 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByP_S(long[] parentResourcePrimKeies,
 		int status, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByP_S(parentResourcePrimKeies, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where parentResourcePrimKey = &#63; and status = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByP_S(long[] parentResourcePrimKeies,
+		int status, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		if (parentResourcePrimKeies.length == 1) {
@@ -11653,17 +12245,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_S,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!ArrayUtil.contains(parentResourcePrimKeies,
-							kbArticle.getParentResourcePrimKey()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_S,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!ArrayUtil.contains(parentResourcePrimKeies,
+								kbArticle.getParentResourcePrimKey()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -11729,11 +12325,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_S,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_P_S,
 					finderArgs);
 
 				throw processException(e);
@@ -11773,8 +12369,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { parentResourcePrimKey, status };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(3);
@@ -11802,10 +12397,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -11829,15 +12424,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				StringUtil.merge(parentResourcePrimKeies), status
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_S,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_S,
 				finderArgs, this);
 
 		if (count == null) {
@@ -11879,11 +12476,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_S,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_P_S,
 					finderArgs);
 
 				throw processException(e);
@@ -11899,6 +12496,256 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	private static final String _FINDER_COLUMN_P_S_PARENTRESOURCEPRIMKEY_2 = "kbArticle.parentResourcePrimKey = ? AND ";
 	private static final String _FINDER_COLUMN_P_S_PARENTRESOURCEPRIMKEY_7 = "kbArticle.parentResourcePrimKey IN (";
 	private static final String _FINDER_COLUMN_P_S_STATUS_2 = "kbArticle.status = ?";
+	public static final FinderPath FINDER_PATH_FETCH_BY_R_G_V = new FinderPath(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+			KBArticleModelImpl.FINDER_CACHE_ENABLED, KBArticleImpl.class,
+			FINDER_CLASS_NAME_ENTITY, "fetchByR_G_V",
+			new String[] {
+				Long.class.getName(), Long.class.getName(),
+				Integer.class.getName()
+			},
+			KBArticleModelImpl.RESOURCEPRIMKEY_COLUMN_BITMASK |
+			KBArticleModelImpl.GROUPID_COLUMN_BITMASK |
+			KBArticleModelImpl.VERSION_COLUMN_BITMASK);
+	public static final FinderPath FINDER_PATH_COUNT_BY_R_G_V = new FinderPath(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+			KBArticleModelImpl.FINDER_CACHE_ENABLED, Long.class,
+			FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION, "countByR_G_V",
+			new String[] {
+				Long.class.getName(), Long.class.getName(),
+				Integer.class.getName()
+			});
+
+	/**
+	 * Returns the k b article where resourcePrimKey = &#63; and groupId = &#63; and version = &#63; or throws a {@link NoSuchArticleException} if it could not be found.
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param version the version
+	 * @return the matching k b article
+	 * @throws NoSuchArticleException if a matching k b article could not be found
+	 */
+	@Override
+	public KBArticle findByR_G_V(long resourcePrimKey, long groupId, int version)
+		throws NoSuchArticleException {
+		KBArticle kbArticle = fetchByR_G_V(resourcePrimKey, groupId, version);
+
+		if (kbArticle == null) {
+			StringBundler msg = new StringBundler(8);
+
+			msg.append(_NO_SUCH_ENTITY_WITH_KEY);
+
+			msg.append("resourcePrimKey=");
+			msg.append(resourcePrimKey);
+
+			msg.append(", groupId=");
+			msg.append(groupId);
+
+			msg.append(", version=");
+			msg.append(version);
+
+			msg.append(StringPool.CLOSE_CURLY_BRACE);
+
+			if (_log.isWarnEnabled()) {
+				_log.warn(msg.toString());
+			}
+
+			throw new NoSuchArticleException(msg.toString());
+		}
+
+		return kbArticle;
+	}
+
+	/**
+	 * Returns the k b article where resourcePrimKey = &#63; and groupId = &#63; and version = &#63; or returns <code>null</code> if it could not be found. Uses the finder cache.
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param version the version
+	 * @return the matching k b article, or <code>null</code> if a matching k b article could not be found
+	 */
+	@Override
+	public KBArticle fetchByR_G_V(long resourcePrimKey, long groupId,
+		int version) {
+		return fetchByR_G_V(resourcePrimKey, groupId, version, true);
+	}
+
+	/**
+	 * Returns the k b article where resourcePrimKey = &#63; and groupId = &#63; and version = &#63; or returns <code>null</code> if it could not be found, optionally using the finder cache.
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param version the version
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the matching k b article, or <code>null</code> if a matching k b article could not be found
+	 */
+	@Override
+	public KBArticle fetchByR_G_V(long resourcePrimKey, long groupId,
+		int version, boolean retrieveFromCache) {
+		Object[] finderArgs = new Object[] { resourcePrimKey, groupId, version };
+
+		Object result = null;
+
+		if (retrieveFromCache) {
+			result = finderCache.getResult(FINDER_PATH_FETCH_BY_R_G_V,
+					finderArgs, this);
+		}
+
+		if (result instanceof KBArticle) {
+			KBArticle kbArticle = (KBArticle)result;
+
+			if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
+					(groupId != kbArticle.getGroupId()) ||
+					(version != kbArticle.getVersion())) {
+				result = null;
+			}
+		}
+
+		if (result == null) {
+			StringBundler query = new StringBundler(5);
+
+			query.append(_SQL_SELECT_KBARTICLE_WHERE);
+
+			query.append(_FINDER_COLUMN_R_G_V_RESOURCEPRIMKEY_2);
+
+			query.append(_FINDER_COLUMN_R_G_V_GROUPID_2);
+
+			query.append(_FINDER_COLUMN_R_G_V_VERSION_2);
+
+			String sql = query.toString();
+
+			Session session = null;
+
+			try {
+				session = openSession();
+
+				Query q = session.createQuery(sql);
+
+				QueryPos qPos = QueryPos.getInstance(q);
+
+				qPos.add(resourcePrimKey);
+
+				qPos.add(groupId);
+
+				qPos.add(version);
+
+				List<KBArticle> list = q.list();
+
+				if (list.isEmpty()) {
+					finderCache.putResult(FINDER_PATH_FETCH_BY_R_G_V,
+						finderArgs, list);
+				}
+				else {
+					KBArticle kbArticle = list.get(0);
+
+					result = kbArticle;
+
+					cacheResult(kbArticle);
+
+					if ((kbArticle.getResourcePrimKey() != resourcePrimKey) ||
+							(kbArticle.getGroupId() != groupId) ||
+							(kbArticle.getVersion() != version)) {
+						finderCache.putResult(FINDER_PATH_FETCH_BY_R_G_V,
+							finderArgs, kbArticle);
+					}
+				}
+			}
+			catch (Exception e) {
+				finderCache.removeResult(FINDER_PATH_FETCH_BY_R_G_V, finderArgs);
+
+				throw processException(e);
+			}
+			finally {
+				closeSession(session);
+			}
+		}
+
+		if (result instanceof List<?>) {
+			return null;
+		}
+		else {
+			return (KBArticle)result;
+		}
+	}
+
+	/**
+	 * Removes the k b article where resourcePrimKey = &#63; and groupId = &#63; and version = &#63; from the database.
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param version the version
+	 * @return the k b article that was removed
+	 */
+	@Override
+	public KBArticle removeByR_G_V(long resourcePrimKey, long groupId,
+		int version) throws NoSuchArticleException {
+		KBArticle kbArticle = findByR_G_V(resourcePrimKey, groupId, version);
+
+		return remove(kbArticle);
+	}
+
+	/**
+	 * Returns the number of k b articles where resourcePrimKey = &#63; and groupId = &#63; and version = &#63;.
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param version the version
+	 * @return the number of matching k b articles
+	 */
+	@Override
+	public int countByR_G_V(long resourcePrimKey, long groupId, int version) {
+		FinderPath finderPath = FINDER_PATH_COUNT_BY_R_G_V;
+
+		Object[] finderArgs = new Object[] { resourcePrimKey, groupId, version };
+
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
+
+		if (count == null) {
+			StringBundler query = new StringBundler(4);
+
+			query.append(_SQL_COUNT_KBARTICLE_WHERE);
+
+			query.append(_FINDER_COLUMN_R_G_V_RESOURCEPRIMKEY_2);
+
+			query.append(_FINDER_COLUMN_R_G_V_GROUPID_2);
+
+			query.append(_FINDER_COLUMN_R_G_V_VERSION_2);
+
+			String sql = query.toString();
+
+			Session session = null;
+
+			try {
+				session = openSession();
+
+				Query q = session.createQuery(sql);
+
+				QueryPos qPos = QueryPos.getInstance(q);
+
+				qPos.add(resourcePrimKey);
+
+				qPos.add(groupId);
+
+				qPos.add(version);
+
+				count = (Long)q.uniqueResult();
+
+				finderCache.putResult(finderPath, finderArgs, count);
+			}
+			catch (Exception e) {
+				finderCache.removeResult(finderPath, finderArgs);
+
+				throw processException(e);
+			}
+			finally {
+				closeSession(session);
+			}
+		}
+
+		return count.intValue();
+	}
+
+	private static final String _FINDER_COLUMN_R_G_V_RESOURCEPRIMKEY_2 = "kbArticle.resourcePrimKey = ? AND ";
+	private static final String _FINDER_COLUMN_R_G_V_GROUPID_2 = "kbArticle.groupId = ? AND ";
+	private static final String _FINDER_COLUMN_R_G_V_VERSION_2 = "kbArticle.version = ?";
 	public static final FinderPath FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_L = new FinderPath(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 			KBArticleModelImpl.FINDER_CACHE_ENABLED, KBArticleImpl.class,
 			FINDER_CLASS_NAME_LIST_WITH_PAGINATION, "findByR_G_L",
@@ -11989,6 +12836,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByR_G_L(long resourcePrimKey, long groupId,
 		boolean latest, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_G_L(resourcePrimKey, groupId, latest, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and groupId = &#63; and latest = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_G_L(long resourcePrimKey, long groupId,
+		boolean latest, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -12008,17 +12880,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
-						(groupId != kbArticle.getGroupId()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
+							(groupId != kbArticle.getGroupId()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -12083,10 +12959,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -12785,8 +13661,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -12934,11 +13812,38 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByR_G_L(long[] resourcePrimKeies, long groupId,
 		boolean latest, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_G_L(resourcePrimKeies, groupId, latest, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and groupId = &#63; and latest = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_G_L(long[] resourcePrimKeies, long groupId,
+		boolean latest, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		if (resourcePrimKeies.length == 1) {
@@ -12964,18 +13869,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_L,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!ArrayUtil.contains(resourcePrimKeies,
-							kbArticle.getResourcePrimKey()) ||
-						(groupId != kbArticle.getGroupId()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_L,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!ArrayUtil.contains(resourcePrimKeies,
+								kbArticle.getResourcePrimKey()) ||
+							(groupId != kbArticle.getGroupId()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -13045,11 +13954,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_L,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_L,
 					finderArgs);
 
 				throw processException(e);
@@ -13091,8 +14000,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { resourcePrimKey, groupId, latest };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -13124,10 +14032,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -13153,15 +14061,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				StringUtil.merge(resourcePrimKeies), groupId, latest
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_L,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_L,
 				finderArgs, this);
 
 		if (count == null) {
@@ -13207,11 +14117,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_L,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_L,
 					finderArgs);
 
 				throw processException(e);
@@ -13301,8 +14211,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -13456,6 +14368,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByR_G_M(long resourcePrimKey, long groupId,
 		boolean main, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_G_M(resourcePrimKey, groupId, main, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and groupId = &#63; and main = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_G_M(long resourcePrimKey, long groupId,
+		boolean main, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -13475,17 +14412,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
-						(groupId != kbArticle.getGroupId()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
+							(groupId != kbArticle.getGroupId()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -13550,10 +14491,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -14250,8 +15191,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -14399,11 +15342,38 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByR_G_M(long[] resourcePrimKeies, long groupId,
 		boolean main, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_G_M(resourcePrimKeies, groupId, main, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and groupId = &#63; and main = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_G_M(long[] resourcePrimKeies, long groupId,
+		boolean main, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		if (resourcePrimKeies.length == 1) {
@@ -14429,18 +15399,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_M,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!ArrayUtil.contains(resourcePrimKeies,
-							kbArticle.getResourcePrimKey()) ||
-						(groupId != kbArticle.getGroupId()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_M,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!ArrayUtil.contains(resourcePrimKeies,
+								kbArticle.getResourcePrimKey()) ||
+							(groupId != kbArticle.getGroupId()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -14510,11 +15484,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_M,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_M,
 					finderArgs);
 
 				throw processException(e);
@@ -14556,8 +15530,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { resourcePrimKey, groupId, main };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -14589,10 +15562,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -14617,15 +15590,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				StringUtil.merge(resourcePrimKeies), groupId, main
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_M,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_M,
 				finderArgs, this);
 
 		if (count == null) {
@@ -14671,11 +15646,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_M,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_M,
 					finderArgs);
 
 				throw processException(e);
@@ -14765,8 +15740,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -14920,6 +15897,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByR_G_S(long resourcePrimKey, long groupId,
 		int status, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_G_S(resourcePrimKey, groupId, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and groupId = &#63; and status = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_G_S(long resourcePrimKey, long groupId,
+		int status, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -14939,17 +15941,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
-						(groupId != kbArticle.getGroupId()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((resourcePrimKey != kbArticle.getResourcePrimKey()) ||
+							(groupId != kbArticle.getGroupId()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -15014,10 +16020,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -15714,8 +16720,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -15863,11 +16871,38 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByR_G_S(long[] resourcePrimKeies, long groupId,
 		int status, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByR_G_S(resourcePrimKeies, groupId, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where resourcePrimKey = &#63; and groupId = &#63; and status = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param resourcePrimKey the resource prim key
+	 * @param groupId the group ID
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByR_G_S(long[] resourcePrimKeies, long groupId,
+		int status, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		if (resourcePrimKeies.length == 1) {
@@ -15893,18 +16928,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_S,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if (!ArrayUtil.contains(resourcePrimKeies,
-							kbArticle.getResourcePrimKey()) ||
-						(groupId != kbArticle.getGroupId()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_S,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if (!ArrayUtil.contains(resourcePrimKeies,
+								kbArticle.getResourcePrimKey()) ||
+							(groupId != kbArticle.getGroupId()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -15974,11 +17013,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_S,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_R_G_S,
 					finderArgs);
 
 				throw processException(e);
@@ -16020,8 +17059,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { resourcePrimKey, groupId, status };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -16053,10 +17091,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -16081,15 +17119,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				StringUtil.merge(resourcePrimKeies), groupId, status
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_S,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_S,
 				finderArgs, this);
 
 		if (count == null) {
@@ -16135,11 +17175,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_S,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_R_G_S,
 					finderArgs);
 
 				throw processException(e);
@@ -16228,8 +17268,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (resourcePrimKeies == null) {
 			resourcePrimKeies = new long[0];
 		}
-		else {
+		else if (resourcePrimKeies.length > 1) {
 			resourcePrimKeies = ArrayUtil.unique(resourcePrimKeies);
+
+			Arrays.sort(resourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -16384,6 +17426,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_P_L(long groupId,
 		long parentResourcePrimKey, boolean latest, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_P_L(groupId, parentResourcePrimKey, latest, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and parentResourcePrimKey = &#63; and latest = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_P_L(long groupId,
+		long parentResourcePrimKey, boolean latest, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -16403,17 +17470,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -16478,10 +17549,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -17185,8 +18256,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -17335,11 +18408,38 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_P_L(long groupId,
 		long[] parentResourcePrimKeies, boolean latest, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_P_L(groupId, parentResourcePrimKeies, latest, start,
+			end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and parentResourcePrimKey = &#63; and latest = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_P_L(long groupId,
+		long[] parentResourcePrimKeies, boolean latest, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		if (parentResourcePrimKeies.length == 1) {
@@ -17365,18 +18465,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_L,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						!ArrayUtil.contains(parentResourcePrimKeies,
-							kbArticle.getParentResourcePrimKey()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_L,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							!ArrayUtil.contains(parentResourcePrimKeies,
+								kbArticle.getParentResourcePrimKey()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -17446,11 +18550,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_L,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_L,
 					finderArgs);
 
 				throw processException(e);
@@ -17496,8 +18600,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				groupId, parentResourcePrimKey, latest
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -17529,10 +18632,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -17558,15 +18661,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				groupId, StringUtil.merge(parentResourcePrimKeies), latest
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_L,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_L,
 				finderArgs, this);
 
 		if (count == null) {
@@ -17612,11 +18717,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_L,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_L,
 					finderArgs);
 
 				throw processException(e);
@@ -17706,8 +18811,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -17862,6 +18969,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_P_M(long groupId,
 		long parentResourcePrimKey, boolean main, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_P_M(groupId, parentResourcePrimKey, main, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and parentResourcePrimKey = &#63; and main = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_P_M(long groupId,
+		long parentResourcePrimKey, boolean main, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -17881,17 +19013,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -17956,10 +19092,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -18663,8 +19799,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -18813,11 +19951,38 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_P_M(long groupId,
 		long[] parentResourcePrimKeies, boolean main, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_P_M(groupId, parentResourcePrimKeies, main, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and parentResourcePrimKey = &#63; and main = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_P_M(long groupId,
+		long[] parentResourcePrimKeies, boolean main, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		if (parentResourcePrimKeies.length == 1) {
@@ -18843,18 +20008,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_M,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						!ArrayUtil.contains(parentResourcePrimKeies,
-							kbArticle.getParentResourcePrimKey()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_M,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							!ArrayUtil.contains(parentResourcePrimKeies,
+								kbArticle.getParentResourcePrimKey()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -18924,11 +20093,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_M,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_M,
 					finderArgs);
 
 				throw processException(e);
@@ -18972,8 +20141,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, parentResourcePrimKey, main };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -19005,10 +20173,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -19034,15 +20202,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				groupId, StringUtil.merge(parentResourcePrimKeies), main
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_M,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_M,
 				finderArgs, this);
 
 		if (count == null) {
@@ -19088,11 +20258,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_M,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_M,
 					finderArgs);
 
 				throw processException(e);
@@ -19182,8 +20352,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -19338,6 +20510,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_P_S(long groupId,
 		long parentResourcePrimKey, int status, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_P_S(groupId, parentResourcePrimKey, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and parentResourcePrimKey = &#63; and status = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_P_S(long groupId,
+		long parentResourcePrimKey, int status, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -19357,17 +20554,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(parentResourcePrimKey != kbArticle.getParentResourcePrimKey()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -19432,10 +20633,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -20139,8 +21340,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -20289,11 +21492,38 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_P_S(long groupId,
 		long[] parentResourcePrimKeies, int status, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_P_S(groupId, parentResourcePrimKeies, status, start,
+			end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and parentResourcePrimKey = &#63; and status = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param parentResourcePrimKey the parent resource prim key
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_P_S(long groupId,
+		long[] parentResourcePrimKeies, int status, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		if (parentResourcePrimKeies.length == 1) {
@@ -20319,18 +21549,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_S,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						!ArrayUtil.contains(parentResourcePrimKeies,
-							kbArticle.getParentResourcePrimKey()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_S,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							!ArrayUtil.contains(parentResourcePrimKeies,
+								kbArticle.getParentResourcePrimKey()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -20400,11 +21634,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_S,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_P_S,
 					finderArgs);
 
 				throw processException(e);
@@ -20449,8 +21683,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				groupId, parentResourcePrimKey, status
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -20482,10 +21715,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -20511,15 +21744,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		Object[] finderArgs = new Object[] {
 				groupId, StringUtil.merge(parentResourcePrimKeies), status
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_S,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_S,
 				finderArgs, this);
 
 		if (count == null) {
@@ -20565,11 +21800,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_S,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_P_S,
 					finderArgs);
 
 				throw processException(e);
@@ -20659,8 +21894,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (parentResourcePrimKeies == null) {
 			parentResourcePrimKeies = new long[0];
 		}
-		else {
+		else if (parentResourcePrimKeies.length > 1) {
 			parentResourcePrimKeies = ArrayUtil.unique(parentResourcePrimKeies);
+
+			Arrays.sort(parentResourcePrimKeies);
 		}
 
 		StringBundler query = new StringBundler();
@@ -20809,6 +22046,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_KBFI_UT(long groupId, long kbFolderId,
 		String urlTitle, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_KBFI_UT(groupId, kbFolderId, urlTitle, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and kbFolderId = &#63; and urlTitle = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param kbFolderId the kb folder ID
+	 * @param urlTitle the url title
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_KBFI_UT(long groupId, long kbFolderId,
+		String urlTitle, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -20828,17 +22090,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(kbFolderId != kbArticle.getKbFolderId()) ||
-						!Validator.equals(urlTitle, kbArticle.getUrlTitle())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(kbFolderId != kbArticle.getKbFolderId()) ||
+							!Validator.equals(urlTitle, kbArticle.getUrlTitle())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -20917,10 +22183,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -21625,8 +22891,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, kbFolderId, urlTitle };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -21672,10 +22937,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -21849,6 +23114,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_KBFI_S(long groupId, long kbFolderId,
 		int status, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_KBFI_S(groupId, kbFolderId, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and kbFolderId = &#63; and status = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param kbFolderId the kb folder ID
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_KBFI_S(long groupId, long kbFolderId,
+		int status, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -21868,17 +23158,21 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(kbFolderId != kbArticle.getKbFolderId()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(kbFolderId != kbArticle.getKbFolderId()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -21943,10 +23237,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -22609,8 +23903,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, kbFolderId, status };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -22642,10 +23935,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -22790,6 +24083,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_S_L(long groupId, String sections,
 		boolean latest, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_S_L(groupId, sections, latest, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and sections LIKE &#63; and latest = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param sections the sections
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_S_L(long groupId, String sections,
+		boolean latest, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -22801,19 +24119,24 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				start, end, orderByComparator
 			};
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						!StringUtil.wildcardMatches(kbArticle.getSections(),
-							sections, CharPool.UNDERLINE, CharPool.PERCENT,
-							CharPool.BACK_SLASH, true) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							!StringUtil.wildcardMatches(
+								kbArticle.getSections(), sections,
+								CharPool.UNDERLINE, CharPool.PERCENT,
+								CharPool.BACK_SLASH, true) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -22892,10 +24215,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -23632,9 +24955,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		StringBundler query = new StringBundler();
@@ -23800,12 +25125,39 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_S_L(long groupId, String[] sectionses,
 		boolean latest, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_S_L(groupId, sectionses, latest, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and sections LIKE &#63; and latest = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param sections the sections
+	 * @param latest the latest
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_S_L(long groupId, String[] sectionses,
+		boolean latest, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		if (sectionses.length == 1) {
@@ -23831,17 +25183,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_L,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						!ArrayUtil.contains(sectionses, kbArticle.getSections()) ||
-						(latest != kbArticle.getLatest())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_L,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							!ArrayUtil.contains(sectionses,
+								kbArticle.getSections()) ||
+							(latest != kbArticle.getLatest())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -23929,11 +25286,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_L,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_L,
 					finderArgs);
 
 				throw processException(e);
@@ -23975,8 +25332,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, sections, latest };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -24022,10 +25378,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -24050,16 +25406,18 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		Object[] finderArgs = new Object[] {
 				groupId, StringUtil.merge(sectionses), latest
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_L,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_L,
 				finderArgs, this);
 
 		if (count == null) {
@@ -24123,11 +25481,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_L,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_L,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_L,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_L,
 					finderArgs);
 
 				throw processException(e);
@@ -24230,9 +25588,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		StringBundler query = new StringBundler();
@@ -24393,6 +25753,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_S_M(long groupId, String sections,
 		boolean main, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_S_M(groupId, sections, main, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and sections LIKE &#63; and main = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param sections the sections
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_S_M(long groupId, String sections,
+		boolean main, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -24404,19 +25789,24 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				start, end, orderByComparator
 			};
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						!StringUtil.wildcardMatches(kbArticle.getSections(),
-							sections, CharPool.UNDERLINE, CharPool.PERCENT,
-							CharPool.BACK_SLASH, true) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							!StringUtil.wildcardMatches(
+								kbArticle.getSections(), sections,
+								CharPool.UNDERLINE, CharPool.PERCENT,
+								CharPool.BACK_SLASH, true) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -24495,10 +25885,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -25235,9 +26625,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		StringBundler query = new StringBundler();
@@ -25403,12 +26795,39 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_S_M(long groupId, String[] sectionses,
 		boolean main, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_S_M(groupId, sectionses, main, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and sections LIKE &#63; and main = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param sections the sections
+	 * @param main the main
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_S_M(long groupId, String[] sectionses,
+		boolean main, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		if (sectionses.length == 1) {
@@ -25434,17 +26853,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_M,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						!ArrayUtil.contains(sectionses, kbArticle.getSections()) ||
-						(main != kbArticle.getMain())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_M,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							!ArrayUtil.contains(sectionses,
+								kbArticle.getSections()) ||
+							(main != kbArticle.getMain())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -25532,11 +26956,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_M,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_M,
 					finderArgs);
 
 				throw processException(e);
@@ -25578,8 +27002,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, sections, main };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -25625,10 +27048,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -25653,16 +27076,18 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		Object[] finderArgs = new Object[] {
 				groupId, StringUtil.merge(sectionses), main
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_M,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_M,
 				finderArgs, this);
 
 		if (count == null) {
@@ -25726,11 +27151,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_M,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_M,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_M,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_M,
 					finderArgs);
 
 				throw processException(e);
@@ -25833,9 +27258,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		StringBundler query = new StringBundler();
@@ -25995,6 +27422,31 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_S_S(long groupId, String sections,
 		int status, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_S_S(groupId, sections, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and sections LIKE &#63; and status = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param sections the sections
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_S_S(long groupId, String sections,
+		int status, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -26006,19 +27458,24 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				start, end, orderByComparator
 			};
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						!StringUtil.wildcardMatches(kbArticle.getSections(),
-							sections, CharPool.UNDERLINE, CharPool.PERCENT,
-							CharPool.BACK_SLASH, true) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							!StringUtil.wildcardMatches(
+								kbArticle.getSections(), sections,
+								CharPool.UNDERLINE, CharPool.PERCENT,
+								CharPool.BACK_SLASH, true) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -26097,10 +27554,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -26837,9 +28294,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		StringBundler query = new StringBundler();
@@ -27005,12 +28464,39 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_S_S(long groupId, String[] sectionses,
 		int status, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_S_S(groupId, sectionses, status, start, end,
+			orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and sections LIKE &#63; and status = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param sections the sections
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_S_S(long groupId, String[] sectionses,
+		int status, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		if (sectionses.length == 1) {
@@ -27036,17 +28522,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_S,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						!ArrayUtil.contains(sectionses, kbArticle.getSections()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_S,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							!ArrayUtil.contains(sectionses,
+								kbArticle.getSections()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -27134,11 +28625,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_S,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_S_S,
 					finderArgs);
 
 				throw processException(e);
@@ -27180,8 +28671,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, sections, status };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(4);
@@ -27227,10 +28717,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -27255,16 +28745,18 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		Object[] finderArgs = new Object[] {
 				groupId, StringUtil.merge(sectionses), status
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_S,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_S,
 				finderArgs, this);
 
 		if (count == null) {
@@ -27328,11 +28820,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_S,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_S,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_S,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_S_S,
 					finderArgs);
 
 				throw processException(e);
@@ -27434,9 +28926,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (sectionses == null) {
 			sectionses = new String[0];
 		}
-		else {
+		else if (sectionses.length > 1) {
 			sectionses = ArrayUtil.distinct(sectionses,
 					NULL_SAFE_STRING_COMPARATOR);
+
+			Arrays.sort(sectionses, NULL_SAFE_STRING_COMPARATOR);
 		}
 
 		StringBundler query = new StringBundler();
@@ -27623,6 +29117,32 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_KBFI_UT_ST(long groupId, long kbFolderId,
 		String urlTitle, int status, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_KBFI_UT_ST(groupId, kbFolderId, urlTitle, status, start,
+			end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and kbFolderId = &#63; and urlTitle = &#63; and status = &#63;.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param kbFolderId the kb folder ID
+	 * @param urlTitle the url title
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_KBFI_UT_ST(long groupId, long kbFolderId,
+		String urlTitle, int status, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -27642,18 +29162,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(kbFolderId != kbArticle.getKbFolderId()) ||
-						!Validator.equals(urlTitle, kbArticle.getUrlTitle()) ||
-						(status != kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(kbFolderId != kbArticle.getKbFolderId()) ||
+							!Validator.equals(urlTitle, kbArticle.getUrlTitle()) ||
+							(status != kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -27736,10 +29260,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -28518,8 +30042,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (statuses == null) {
 			statuses = new int[0];
 		}
-		else {
+		else if (statuses.length > 1) {
 			statuses = ArrayUtil.unique(statuses);
+
+			Arrays.sort(statuses);
 		}
 
 		StringBundler query = new StringBundler();
@@ -28687,11 +30213,39 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	public List<KBArticle> findByG_KBFI_UT_ST(long groupId, long kbFolderId,
 		String urlTitle, int[] statuses, int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findByG_KBFI_UT_ST(groupId, kbFolderId, urlTitle, statuses,
+			start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles where groupId = &#63; and kbFolderId = &#63; and urlTitle = &#63; and status = &#63;, optionally using the finder cache.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param groupId the group ID
+	 * @param kbFolderId the kb folder ID
+	 * @param urlTitle the url title
+	 * @param status the status
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of matching k b articles
+	 */
+	@Override
+	public List<KBArticle> findByG_KBFI_UT_ST(long groupId, long kbFolderId,
+		String urlTitle, int[] statuses, int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		if (statuses == null) {
 			statuses = new int[0];
 		}
-		else {
+		else if (statuses.length > 1) {
 			statuses = ArrayUtil.unique(statuses);
+
+			Arrays.sort(statuses);
 		}
 
 		if (statuses.length == 1) {
@@ -28717,18 +30271,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				};
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_KBFI_UT_ST,
-				finderArgs, this);
+		List<KBArticle> list = null;
 
-		if ((list != null) && !list.isEmpty()) {
-			for (KBArticle kbArticle : list) {
-				if ((groupId != kbArticle.getGroupId()) ||
-						(kbFolderId != kbArticle.getKbFolderId()) ||
-						!Validator.equals(urlTitle, kbArticle.getUrlTitle()) ||
-						!ArrayUtil.contains(statuses, kbArticle.getStatus())) {
-					list = null;
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_KBFI_UT_ST,
+					finderArgs, this);
 
-					break;
+			if ((list != null) && !list.isEmpty()) {
+				for (KBArticle kbArticle : list) {
+					if ((groupId != kbArticle.getGroupId()) ||
+							(kbFolderId != kbArticle.getKbFolderId()) ||
+							!Validator.equals(urlTitle, kbArticle.getUrlTitle()) ||
+							!ArrayUtil.contains(statuses, kbArticle.getStatus())) {
+						list = null;
+
+						break;
+					}
 				}
 			}
 		}
@@ -28814,11 +30372,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_KBFI_UT_ST,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_KBFI_UT_ST,
 					finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_KBFI_UT_ST,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_FIND_BY_G_KBFI_UT_ST,
 					finderArgs);
 
 				throw processException(e);
@@ -28864,8 +30422,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 		Object[] finderArgs = new Object[] { groupId, kbFolderId, urlTitle, status };
 
-		Long count = (Long)FinderCacheUtil.getResult(finderPath, finderArgs,
-				this);
+		Long count = (Long)finderCache.getResult(finderPath, finderArgs, this);
 
 		if (count == null) {
 			StringBundler query = new StringBundler(5);
@@ -28915,10 +30472,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, count);
+				finderCache.putResult(finderPath, finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -28945,15 +30502,17 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (statuses == null) {
 			statuses = new int[0];
 		}
-		else {
+		else if (statuses.length > 1) {
 			statuses = ArrayUtil.unique(statuses);
+
+			Arrays.sort(statuses);
 		}
 
 		Object[] finderArgs = new Object[] {
 				groupId, kbFolderId, urlTitle, StringUtil.merge(statuses)
 			};
 
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_KBFI_UT_ST,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_KBFI_UT_ST,
 				finderArgs, this);
 
 		if (count == null) {
@@ -29015,11 +30574,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_KBFI_UT_ST,
+				finderCache.putResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_KBFI_UT_ST,
 					finderArgs, count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_KBFI_UT_ST,
+				finderCache.removeResult(FINDER_PATH_WITH_PAGINATION_COUNT_BY_G_KBFI_UT_ST,
 					finderArgs);
 
 				throw processException(e);
@@ -29129,8 +30688,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		if (statuses == null) {
 			statuses = new int[0];
 		}
-		else {
+		else if (statuses.length > 1) {
 			statuses = ArrayUtil.unique(statuses);
+
+			Arrays.sort(statuses);
 		}
 
 		StringBundler query = new StringBundler();
@@ -29225,16 +30786,22 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	 */
 	@Override
 	public void cacheResult(KBArticle kbArticle) {
-		EntityCacheUtil.putResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+		entityCache.putResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 			KBArticleImpl.class, kbArticle.getPrimaryKey(), kbArticle);
 
-		FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_UUID_G,
+		finderCache.putResult(FINDER_PATH_FETCH_BY_UUID_G,
 			new Object[] { kbArticle.getUuid(), kbArticle.getGroupId() },
 			kbArticle);
 
-		FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_R_V,
+		finderCache.putResult(FINDER_PATH_FETCH_BY_R_V,
 			new Object[] { kbArticle.getResourcePrimKey(), kbArticle.getVersion() },
 			kbArticle);
+
+		finderCache.putResult(FINDER_PATH_FETCH_BY_R_G_V,
+			new Object[] {
+				kbArticle.getResourcePrimKey(), kbArticle.getGroupId(),
+				kbArticle.getVersion()
+			}, kbArticle);
 
 		kbArticle.resetOriginalValues();
 	}
@@ -29247,8 +30814,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public void cacheResult(List<KBArticle> kbArticles) {
 		for (KBArticle kbArticle : kbArticles) {
-			if (EntityCacheUtil.getResult(
-						KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+			if (entityCache.getResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 						KBArticleImpl.class, kbArticle.getPrimaryKey()) == null) {
 				cacheResult(kbArticle);
 			}
@@ -29262,43 +30828,43 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	 * Clears the cache for all k b articles.
 	 *
 	 * <p>
-	 * The {@link com.liferay.portal.kernel.dao.orm.EntityCache} and {@link com.liferay.portal.kernel.dao.orm.FinderCache} are both cleared by this method.
+	 * The {@link EntityCache} and {@link FinderCache} are both cleared by this method.
 	 * </p>
 	 */
 	@Override
 	public void clearCache() {
-		EntityCacheUtil.clearCache(KBArticleImpl.class);
+		entityCache.clearCache(KBArticleImpl.class);
 
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_ENTITY);
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_ENTITY);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 	}
 
 	/**
 	 * Clears the cache for the k b article.
 	 *
 	 * <p>
-	 * The {@link com.liferay.portal.kernel.dao.orm.EntityCache} and {@link com.liferay.portal.kernel.dao.orm.FinderCache} are both cleared by this method.
+	 * The {@link EntityCache} and {@link FinderCache} are both cleared by this method.
 	 * </p>
 	 */
 	@Override
 	public void clearCache(KBArticle kbArticle) {
-		EntityCacheUtil.removeResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+		entityCache.removeResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 			KBArticleImpl.class, kbArticle.getPrimaryKey());
 
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 
 		clearUniqueFindersCache((KBArticleModelImpl)kbArticle);
 	}
 
 	@Override
 	public void clearCache(List<KBArticle> kbArticles) {
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 
 		for (KBArticle kbArticle : kbArticles) {
-			EntityCacheUtil.removeResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+			entityCache.removeResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 				KBArticleImpl.class, kbArticle.getPrimaryKey());
 
 			clearUniqueFindersCache((KBArticleModelImpl)kbArticle);
@@ -29313,9 +30879,9 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 					kbArticleModelImpl.getGroupId()
 				};
 
-			FinderCacheUtil.putResult(FINDER_PATH_COUNT_BY_UUID_G, args,
+			finderCache.putResult(FINDER_PATH_COUNT_BY_UUID_G, args,
 				Long.valueOf(1));
-			FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_UUID_G, args,
+			finderCache.putResult(FINDER_PATH_FETCH_BY_UUID_G, args,
 				kbArticleModelImpl);
 
 			args = new Object[] {
@@ -29323,9 +30889,20 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 					kbArticleModelImpl.getVersion()
 				};
 
-			FinderCacheUtil.putResult(FINDER_PATH_COUNT_BY_R_V, args,
+			finderCache.putResult(FINDER_PATH_COUNT_BY_R_V, args,
 				Long.valueOf(1));
-			FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_R_V, args,
+			finderCache.putResult(FINDER_PATH_FETCH_BY_R_V, args,
+				kbArticleModelImpl);
+
+			args = new Object[] {
+					kbArticleModelImpl.getResourcePrimKey(),
+					kbArticleModelImpl.getGroupId(),
+					kbArticleModelImpl.getVersion()
+				};
+
+			finderCache.putResult(FINDER_PATH_COUNT_BY_R_G_V, args,
+				Long.valueOf(1));
+			finderCache.putResult(FINDER_PATH_FETCH_BY_R_G_V, args,
 				kbArticleModelImpl);
 		}
 		else {
@@ -29336,9 +30913,9 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getGroupId()
 					};
 
-				FinderCacheUtil.putResult(FINDER_PATH_COUNT_BY_UUID_G, args,
+				finderCache.putResult(FINDER_PATH_COUNT_BY_UUID_G, args,
 					Long.valueOf(1));
-				FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_UUID_G, args,
+				finderCache.putResult(FINDER_PATH_FETCH_BY_UUID_G, args,
 					kbArticleModelImpl);
 			}
 
@@ -29349,9 +30926,23 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getVersion()
 					};
 
-				FinderCacheUtil.putResult(FINDER_PATH_COUNT_BY_R_V, args,
+				finderCache.putResult(FINDER_PATH_COUNT_BY_R_V, args,
 					Long.valueOf(1));
-				FinderCacheUtil.putResult(FINDER_PATH_FETCH_BY_R_V, args,
+				finderCache.putResult(FINDER_PATH_FETCH_BY_R_V, args,
+					kbArticleModelImpl);
+			}
+
+			if ((kbArticleModelImpl.getColumnBitmask() &
+					FINDER_PATH_FETCH_BY_R_G_V.getColumnBitmask()) != 0) {
+				Object[] args = new Object[] {
+						kbArticleModelImpl.getResourcePrimKey(),
+						kbArticleModelImpl.getGroupId(),
+						kbArticleModelImpl.getVersion()
+					};
+
+				finderCache.putResult(FINDER_PATH_COUNT_BY_R_G_V, args,
+					Long.valueOf(1));
+				finderCache.putResult(FINDER_PATH_FETCH_BY_R_G_V, args,
 					kbArticleModelImpl);
 			}
 		}
@@ -29363,8 +30954,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				kbArticleModelImpl.getUuid(), kbArticleModelImpl.getGroupId()
 			};
 
-		FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_UUID_G, args);
-		FinderCacheUtil.removeResult(FINDER_PATH_FETCH_BY_UUID_G, args);
+		finderCache.removeResult(FINDER_PATH_COUNT_BY_UUID_G, args);
+		finderCache.removeResult(FINDER_PATH_FETCH_BY_UUID_G, args);
 
 		if ((kbArticleModelImpl.getColumnBitmask() &
 				FINDER_PATH_FETCH_BY_UUID_G.getColumnBitmask()) != 0) {
@@ -29373,8 +30964,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 					kbArticleModelImpl.getOriginalGroupId()
 				};
 
-			FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_UUID_G, args);
-			FinderCacheUtil.removeResult(FINDER_PATH_FETCH_BY_UUID_G, args);
+			finderCache.removeResult(FINDER_PATH_COUNT_BY_UUID_G, args);
+			finderCache.removeResult(FINDER_PATH_FETCH_BY_UUID_G, args);
 		}
 
 		args = new Object[] {
@@ -29382,8 +30973,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 				kbArticleModelImpl.getVersion()
 			};
 
-		FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_V, args);
-		FinderCacheUtil.removeResult(FINDER_PATH_FETCH_BY_R_V, args);
+		finderCache.removeResult(FINDER_PATH_COUNT_BY_R_V, args);
+		finderCache.removeResult(FINDER_PATH_FETCH_BY_R_V, args);
 
 		if ((kbArticleModelImpl.getColumnBitmask() &
 				FINDER_PATH_FETCH_BY_R_V.getColumnBitmask()) != 0) {
@@ -29392,8 +30983,28 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 					kbArticleModelImpl.getOriginalVersion()
 				};
 
-			FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_V, args);
-			FinderCacheUtil.removeResult(FINDER_PATH_FETCH_BY_R_V, args);
+			finderCache.removeResult(FINDER_PATH_COUNT_BY_R_V, args);
+			finderCache.removeResult(FINDER_PATH_FETCH_BY_R_V, args);
+		}
+
+		args = new Object[] {
+				kbArticleModelImpl.getResourcePrimKey(),
+				kbArticleModelImpl.getGroupId(), kbArticleModelImpl.getVersion()
+			};
+
+		finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G_V, args);
+		finderCache.removeResult(FINDER_PATH_FETCH_BY_R_G_V, args);
+
+		if ((kbArticleModelImpl.getColumnBitmask() &
+				FINDER_PATH_FETCH_BY_R_G_V.getColumnBitmask()) != 0) {
+			args = new Object[] {
+					kbArticleModelImpl.getOriginalResourcePrimKey(),
+					kbArticleModelImpl.getOriginalGroupId(),
+					kbArticleModelImpl.getOriginalVersion()
+				};
+
+			finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G_V, args);
+			finderCache.removeResult(FINDER_PATH_FETCH_BY_R_G_V, args);
 		}
 	}
 
@@ -29558,10 +31169,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 			closeSession(session);
 		}
 
-		FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
 
 		if (isNew || !KBArticleModelImpl.COLUMN_BITMASK_ENABLED) {
-			FinderCacheUtil.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+			finderCache.clearCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 		}
 
 		else {
@@ -29571,14 +31182,14 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalUuid()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_UUID, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_UUID,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_UUID, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_UUID,
 					args);
 
 				args = new Object[] { kbArticleModelImpl.getUuid() };
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_UUID, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_UUID,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_UUID, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_UUID,
 					args);
 			}
 
@@ -29589,8 +31200,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalCompanyId()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_UUID_C, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_UUID_C,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_UUID_C, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_UUID_C,
 					args);
 
 				args = new Object[] {
@@ -29598,8 +31209,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getCompanyId()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_UUID_C, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_UUID_C,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_UUID_C, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_UUID_C,
 					args);
 			}
 
@@ -29609,16 +31220,16 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalResourcePrimKey()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_RESOURCEPRIMKEY,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_RESOURCEPRIMKEY,
 					args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_RESOURCEPRIMKEY,
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_RESOURCEPRIMKEY,
 					args);
 
 				args = new Object[] { kbArticleModelImpl.getResourcePrimKey() };
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_RESOURCEPRIMKEY,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_RESOURCEPRIMKEY,
 					args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_RESOURCEPRIMKEY,
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_RESOURCEPRIMKEY,
 					args);
 			}
 
@@ -29629,8 +31240,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalGroupId()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_G, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G,
 					args);
 
 				args = new Object[] {
@@ -29638,8 +31249,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getGroupId()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_G, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G,
 					args);
 			}
 
@@ -29650,8 +31261,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_L,
 					args);
 
 				args = new Object[] {
@@ -29659,8 +31270,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_L,
 					args);
 			}
 
@@ -29671,8 +31282,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_M,
 					args);
 
 				args = new Object[] {
@@ -29680,8 +31291,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_M,
 					args);
 			}
 
@@ -29692,8 +31303,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_S,
 					args);
 
 				args = new Object[] {
@@ -29701,8 +31312,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_S,
 					args);
 			}
 
@@ -29713,8 +31324,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_L,
 					args);
 
 				args = new Object[] {
@@ -29722,8 +31333,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_L,
 					args);
 			}
 
@@ -29734,8 +31345,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_M,
 					args);
 
 				args = new Object[] {
@@ -29743,8 +31354,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_M,
 					args);
 			}
 
@@ -29755,8 +31366,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_S,
 					args);
 
 				args = new Object[] {
@@ -29764,8 +31375,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_S,
 					args);
 			}
 
@@ -29776,8 +31387,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_C_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_C_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_L,
 					args);
 
 				args = new Object[] {
@@ -29785,8 +31396,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_C_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_C_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_L,
 					args);
 			}
 
@@ -29797,8 +31408,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_C_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_C_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_M,
 					args);
 
 				args = new Object[] {
@@ -29806,8 +31417,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_C_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_C_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_M,
 					args);
 			}
 
@@ -29818,8 +31429,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_C_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_C_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_S,
 					args);
 
 				args = new Object[] {
@@ -29827,8 +31438,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_C_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_C_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_C_S,
 					args);
 			}
 
@@ -29839,8 +31450,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_P_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_P_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_L,
 					args);
 
 				args = new Object[] {
@@ -29848,8 +31459,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_P_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_P_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_L,
 					args);
 			}
 
@@ -29860,8 +31471,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_P_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_P_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_M,
 					args);
 
 				args = new Object[] {
@@ -29869,8 +31480,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_P_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_P_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_M,
 					args);
 			}
 
@@ -29881,8 +31492,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_P_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_P_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_S,
 					args);
 
 				args = new Object[] {
@@ -29890,8 +31501,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_P_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_P_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_P_S,
 					args);
 			}
 
@@ -29903,8 +31514,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_G_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_L,
 					args);
 
 				args = new Object[] {
@@ -29913,8 +31524,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_G_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_L,
 					args);
 			}
 
@@ -29926,8 +31537,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_G_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_M,
 					args);
 
 				args = new Object[] {
@@ -29936,8 +31547,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_G_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_M,
 					args);
 			}
 
@@ -29949,8 +31560,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_G_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_S,
 					args);
 
 				args = new Object[] {
@@ -29959,8 +31570,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_R_G_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_R_G_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_R_G_S,
 					args);
 			}
 
@@ -29972,8 +31583,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_P_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_P_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_L,
 					args);
 
 				args = new Object[] {
@@ -29982,8 +31593,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getLatest()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_P_L, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_L,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_P_L, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_L,
 					args);
 			}
 
@@ -29995,8 +31606,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_P_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_P_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_M,
 					args);
 
 				args = new Object[] {
@@ -30005,8 +31616,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getMain()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_P_M, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_M,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_P_M, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_M,
 					args);
 			}
 
@@ -30018,8 +31629,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_P_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_P_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_S,
 					args);
 
 				args = new Object[] {
@@ -30028,8 +31639,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_P_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_P_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_P_S,
 					args);
 			}
 
@@ -30041,9 +31652,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalUrlTitle()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_UT,
-					args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_UT,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_UT, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_UT,
 					args);
 
 				args = new Object[] {
@@ -30052,9 +31662,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getUrlTitle()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_UT,
-					args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_UT,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_UT, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_UT,
 					args);
 			}
 
@@ -30066,8 +31675,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_S,
 					args);
 
 				args = new Object[] {
@@ -30076,8 +31685,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_S, args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_S,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_S, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_S,
 					args);
 			}
 
@@ -30090,9 +31699,8 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getOriginalStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_UT_ST,
-					args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_UT_ST,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_UT_ST, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_UT_ST,
 					args);
 
 				args = new Object[] {
@@ -30102,14 +31710,13 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 						kbArticleModelImpl.getStatus()
 					};
 
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_UT_ST,
-					args);
-				FinderCacheUtil.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_UT_ST,
+				finderCache.removeResult(FINDER_PATH_COUNT_BY_G_KBFI_UT_ST, args);
+				finderCache.removeResult(FINDER_PATH_WITHOUT_PAGINATION_FIND_BY_G_KBFI_UT_ST,
 					args);
 			}
 		}
 
-		EntityCacheUtil.putResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+		entityCache.putResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 			KBArticleImpl.class, kbArticle.getPrimaryKey(), kbArticle, false);
 
 		clearUniqueFindersCache(kbArticleModelImpl);
@@ -30208,7 +31815,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	 */
 	@Override
 	public KBArticle fetchByPrimaryKey(Serializable primaryKey) {
-		KBArticle kbArticle = (KBArticle)EntityCacheUtil.getResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+		KBArticle kbArticle = (KBArticle)entityCache.getResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 				KBArticleImpl.class, primaryKey);
 
 		if (kbArticle == _nullKBArticle) {
@@ -30228,12 +31835,12 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 					cacheResult(kbArticle);
 				}
 				else {
-					EntityCacheUtil.putResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+					entityCache.putResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 						KBArticleImpl.class, primaryKey, _nullKBArticle);
 				}
 			}
 			catch (Exception e) {
-				EntityCacheUtil.removeResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+				entityCache.removeResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 					KBArticleImpl.class, primaryKey);
 
 				throw processException(e);
@@ -30283,7 +31890,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 		Set<Serializable> uncachedPrimaryKeys = null;
 
 		for (Serializable primaryKey : primaryKeys) {
-			KBArticle kbArticle = (KBArticle)EntityCacheUtil.getResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+			KBArticle kbArticle = (KBArticle)entityCache.getResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 					KBArticleImpl.class, primaryKey);
 
 			if (kbArticle == null) {
@@ -30335,7 +31942,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 			}
 
 			for (Serializable primaryKey : uncachedPrimaryKeys) {
-				EntityCacheUtil.putResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
+				entityCache.putResult(KBArticleModelImpl.ENTITY_CACHE_ENABLED,
 					KBArticleImpl.class, primaryKey, _nullKBArticle);
 			}
 		}
@@ -30390,6 +31997,26 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	@Override
 	public List<KBArticle> findAll(int start, int end,
 		OrderByComparator<KBArticle> orderByComparator) {
+		return findAll(start, end, orderByComparator, true);
+	}
+
+	/**
+	 * Returns an ordered range of all the k b articles.
+	 *
+	 * <p>
+	 * Useful when paginating results. Returns a maximum of <code>end - start</code> instances. <code>start</code> and <code>end</code> are not primary keys, they are indexes in the result set. Thus, <code>0</code> refers to the first result in the set. Setting both <code>start</code> and <code>end</code> to {@link QueryUtil#ALL_POS} will return the full result set. If <code>orderByComparator</code> is specified, then the query will include the given ORDER BY logic. If <code>orderByComparator</code> is absent and pagination is required (<code>start</code> and <code>end</code> are not {@link QueryUtil#ALL_POS}), then the query will include the default ORDER BY logic from {@link KBArticleModelImpl}. If both <code>orderByComparator</code> and pagination are absent, for performance reasons, the query will not have an ORDER BY clause and the returned result set will be sorted on by the primary key in an ascending order.
+	 * </p>
+	 *
+	 * @param start the lower bound of the range of k b articles
+	 * @param end the upper bound of the range of k b articles (not inclusive)
+	 * @param orderByComparator the comparator to order the results by (optionally <code>null</code>)
+	 * @param retrieveFromCache whether to retrieve from the finder cache
+	 * @return the ordered range of k b articles
+	 */
+	@Override
+	public List<KBArticle> findAll(int start, int end,
+		OrderByComparator<KBArticle> orderByComparator,
+		boolean retrieveFromCache) {
 		boolean pagination = true;
 		FinderPath finderPath = null;
 		Object[] finderArgs = null;
@@ -30405,8 +32032,12 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 			finderArgs = new Object[] { start, end, orderByComparator };
 		}
 
-		List<KBArticle> list = (List<KBArticle>)FinderCacheUtil.getResult(finderPath,
-				finderArgs, this);
+		List<KBArticle> list = null;
+
+		if (retrieveFromCache) {
+			list = (List<KBArticle>)finderCache.getResult(finderPath,
+					finderArgs, this);
+		}
 
 		if (list == null) {
 			StringBundler query = null;
@@ -30453,10 +32084,10 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				cacheResult(list);
 
-				FinderCacheUtil.putResult(finderPath, finderArgs, list);
+				finderCache.putResult(finderPath, finderArgs, list);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(finderPath, finderArgs);
+				finderCache.removeResult(finderPath, finderArgs);
 
 				throw processException(e);
 			}
@@ -30486,7 +32117,7 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	 */
 	@Override
 	public int countAll() {
-		Long count = (Long)FinderCacheUtil.getResult(FINDER_PATH_COUNT_ALL,
+		Long count = (Long)finderCache.getResult(FINDER_PATH_COUNT_ALL,
 				FINDER_ARGS_EMPTY, this);
 
 		if (count == null) {
@@ -30499,11 +32130,11 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 
 				count = (Long)q.uniqueResult();
 
-				FinderCacheUtil.putResult(FINDER_PATH_COUNT_ALL,
-					FINDER_ARGS_EMPTY, count);
+				finderCache.putResult(FINDER_PATH_COUNT_ALL, FINDER_ARGS_EMPTY,
+					count);
 			}
 			catch (Exception e) {
-				FinderCacheUtil.removeResult(FINDER_PATH_COUNT_ALL,
+				finderCache.removeResult(FINDER_PATH_COUNT_ALL,
 					FINDER_ARGS_EMPTY);
 
 				throw processException(e);
@@ -30533,12 +32164,16 @@ public class KBArticlePersistenceImpl extends BasePersistenceImpl<KBArticle>
 	}
 
 	public void destroy() {
-		EntityCacheUtil.removeCache(KBArticleImpl.class.getName());
-		FinderCacheUtil.removeCache(FINDER_CLASS_NAME_ENTITY);
-		FinderCacheUtil.removeCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
-		FinderCacheUtil.removeCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
+		entityCache.removeCache(KBArticleImpl.class.getName());
+		finderCache.removeCache(FINDER_CLASS_NAME_ENTITY);
+		finderCache.removeCache(FINDER_CLASS_NAME_LIST_WITH_PAGINATION);
+		finderCache.removeCache(FINDER_CLASS_NAME_LIST_WITHOUT_PAGINATION);
 	}
 
+	@BeanReference(type = CompanyProvider.class)
+	protected CompanyProvider companyProvider;
+	protected EntityCache entityCache = EntityCacheUtil.getEntityCache();
+	protected FinderCache finderCache = FinderCacheUtil.getFinderCache();
 	private static final String _SQL_SELECT_KBARTICLE = "SELECT kbArticle FROM KBArticle kbArticle";
 	private static final String _SQL_SELECT_KBARTICLE_WHERE_PKS_IN = "SELECT kbArticle FROM KBArticle kbArticle WHERE kbArticleId IN (";
 	private static final String _SQL_SELECT_KBARTICLE_WHERE = "SELECT kbArticle FROM KBArticle kbArticle WHERE ";

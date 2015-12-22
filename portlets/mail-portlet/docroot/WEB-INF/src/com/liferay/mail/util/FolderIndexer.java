@@ -16,8 +16,8 @@ package com.liferay.mail.util;
 
 import com.liferay.mail.model.Folder;
 import com.liferay.mail.service.FolderLocalServiceUtil;
-import com.liferay.mail.service.persistence.FolderActionableDynamicQuery;
 import com.liferay.portal.kernel.dao.orm.ActionableDynamicQuery;
+import com.liferay.portal.kernel.dao.orm.IndexableActionableDynamicQuery;
 import com.liferay.portal.kernel.dao.orm.QueryUtil;
 import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.log.Log;
@@ -134,33 +134,36 @@ public class FolderIndexer extends BaseIndexer<Folder> {
 	}
 
 	protected void reindexMessages(long companyId) throws PortalException {
-		ActionableDynamicQuery actionableDynamicQuery =
-			new FolderActionableDynamicQuery() {
+		final IndexableActionableDynamicQuery indexableActionableDynamicQuery =
+			FolderLocalServiceUtil.getIndexableActionableDynamicQuery();
 
-			@Override
-			protected void performAction(Object object) {
-				Folder folder = (Folder)object;
+		indexableActionableDynamicQuery.setCompanyId(companyId);
+		indexableActionableDynamicQuery.setPerformActionMethod(
+			new ActionableDynamicQuery.PerformActionMethod<Folder>() {
 
-				try {
-					Document document = getDocument(folder);
+				@Override
+				public void performAction(Folder folder)
+					throws PortalException {
 
-					addDocument(document);
-				}
-				catch (PortalException pe) {
-					if (_log.isWarnEnabled()) {
-						_log.warn(
-							"Unable to index folder " + folder.getFolderId(),
-							pe);
+					try {
+						Document document = getDocument(folder);
+
+						indexableActionableDynamicQuery.addDocuments(document);
+					}
+					catch (PortalException pe) {
+						if (_log.isWarnEnabled()) {
+							_log.warn(
+								"Unable to index folder " +
+									folder.getFolderId(),
+								pe);
+						}
 					}
 				}
-			}
 
-		};
+			});
+		indexableActionableDynamicQuery.setSearchEngineId(getSearchEngineId());
 
-		actionableDynamicQuery.setCompanyId(companyId);
-		actionableDynamicQuery.setSearchEngineId(getSearchEngineId());
-
-		actionableDynamicQuery.performActions();
+		indexableActionableDynamicQuery.performActions();
 	}
 
 	private static final Log _log = LogFactoryUtil.getLog(FolderIndexer.class);
